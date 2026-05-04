@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { Search, SlidersHorizontal, X, ChevronDown, ShoppingBag } from "lucide-react";
 import { productsApi, type CategoryTree } from "@/lib/api";
 import { ProductCard } from "@/components/product/ProductCard";
@@ -21,21 +21,40 @@ export default function Shop() {
     "md:min-h-0 md:h-full md:overflow-y-auto md:overscroll-contain md:[overscroll-behavior:contain] md:[touch-action:pan-y]";
 
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(query.trim()), 280);
+    const t = setTimeout(() => setDebounced(query.trim()), 400);
     return () => clearTimeout(t);
   }, [query]);
 
-  const { data: tree = [], isLoading: loadingCats } = useQuery({
-    queryKey: ["categories", "tree"],
-    queryFn: () =>
-      productsApi.getCategoriesTree().then((r) =>
-        // Exclure les catégories "import_export" — elles ont leur propre page /import.
-        r.data.filter((c) => c.service_type !== "import_export")
-      ),
+ // Tree COMPLET (avec import_export) – sert à calculer les IDs à exclure des produits
+  const { data: fullTree = [], isLoading: loadingCats } = useQuery({
+    queryKey: ["categories", "tree", "full"],
+    staleTime: 30 * 60_000,
+    gcTime: 60 * 60_000,
+    queryFn: () => productsApi.getCategoriesTree().then((r) => r.data),
   });
 
-  const { data: products = [], isLoading: loadingProducts } = useQuery({
+  // Tree visible dans la sidebar : on cache les catégories import_export
+  const tree = useMemo(
+    () => fullTree.filter((c) => c.service_type !== "import_export"),
+    [fullTree]
+  );
+
+  // IDs (catégories + sous-catégories) appartenant au service import_export
+  const importExportIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const c of fullTree) {
+      if (c.service_type === "import_export") {
+        ids.add(c.id);
+        c.subcategories.forEach((s) => ids.add(s.id));
+      }
+    }
+    return ids;
+  }, [fullTree]);
+
+  const { data: rawProducts = [], isLoading: loadingProducts } = useQuery({
     queryKey: ["shop", { selectedId, q: debounced }],
+    staleTime: 60_000,
+    placeholderData: keepPreviousData,
     queryFn: () =>
       productsApi
         .getShopProducts({
@@ -44,6 +63,12 @@ export default function Shop() {
         })
         .then((r) => r.data),
   });
+
+  // Filtre côté front : on retire tout produit dont la catégorie est import/export
+  const products = useMemo(
+    () => rawProducts.filter((p) => !importExportIds.has(p.category_id)),
+    [rawProducts, importExportIds]
+  );
 
   const currentTitle = useMemo(() => {
     if (debounced) return `Recherche : « ${debounced} »`;

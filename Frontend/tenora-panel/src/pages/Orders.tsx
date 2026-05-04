@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Download, ChevronRight, ShoppingCart, ExternalLink } from "lucide-react";
 import { PageHeader } from "@/components/panel/PageHeader";
 import { StatusBadge } from "@/components/panel/StatusBadge";
@@ -9,10 +10,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { getOrders, updateOrderStatus, exportOrdersCsv } from "@/lib/api/orders";
+import { exportOrdersCsv } from "@/lib/api/orders";
 import api from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { OrderClaimBanner } from "@/components/panel/OrderClaimBanner";
+import { useAuthStore } from "@/lib/stores/auth";
+import { useOrders, useOrderMutations, qk } from "@/lib/queries/admin";
+import type { OrderClaim } from "@/lib/api/orderClaim";
 
 interface Order {
   id: number; user_email: string; product_name: string;
@@ -20,15 +25,16 @@ interface Order {
   payment_method: string; created_at: string;
   notes?: string; staff_note?: string; screenshot_path?: string;
   customer_info?: { delivery_name?: string; delivery_phone?: string; delivery_address?: string; };
+  claim?: OrderClaim | null;
 }
 
 const statusOptions = [
   { label: "Toutes", value: "all" },
   { label: "En attente", value: "pending" },
   { label: "En cours", value: "processing" },
-  { label: "Completees", value: "completed" },
-  { label: "Rejetees", value: "rejected" },
-  { label: "Remboursees", value: "refunded" },
+  { label: "Complétées", value: "completed" },
+  { label: "Rejetées", value: "rejected" },
+  { label: "Remboursées", value: "refunded" },
 ];
 const editStatuses = statusOptions.slice(1);
 
@@ -40,36 +46,27 @@ const screenshotUrl = (path?: string) => {
 };
 
 export default function Orders() {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const pageSize = 20;
   const [statusFilter, setStatusFilter] = useState("all");
+
+  const { data: ordersData, isLoading: loading } = useOrders({
+    status: statusFilter !== "all" ? statusFilter : undefined,
+    page,
+    per_page: pageSize,
+  });
+  const orders = (ordersData?.orders ?? []) as Order[];
+  const total  = ordersData?.total ?? 0;
+
+  const { updateStatus: updateStatusMutation } = useOrderMutations();
 
   const [show, setShow] = useState(false);
   const [selected, setSelected] = useState<Order | null>(null);
   const [editStatus, setEditStatus] = useState("");
   const [staffNote, setStaffNote] = useState("");
-  const [updating, setUpdating] = useState(false);
-
-  const fetchOrders = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data } = await getOrders({
-        status: statusFilter !== "all" ? statusFilter : undefined,
-        page, per_page: pageSize,
-      });
-      setOrders(data.orders || []);
-      setTotal(data.total || 0);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  }, [statusFilter, page]);
-
-  useEffect(() => { fetchOrders(); }, [fetchOrders]);
+  const [canEdit, setCanEdit] = useState(true);
+  const adminId = useAuthStore((s) => s.user?.id) ?? -1;
 
   const fmtDate = (d: string) =>
     new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -77,21 +74,19 @@ export default function Orders() {
 
   const open = (o: Order) => {
     setSelected(o); setEditStatus(o.status); setStaffNote(o.staff_note || "");
+    setCanEdit(true);
     setShow(true);
   };
 
   const updateStatus = async () => {
     if (!selected) return;
-    setUpdating(true);
+    if (!canEdit) { toast.error("Commande verrouillée par un autre admin"); return; }
     try {
-      await updateOrderStatus(selected.id, { status: editStatus, staff_note: staffNote });
-      setOrders(orders.map((o) => o.id === selected.id ? { ...o, status: editStatus, staff_note: staffNote } : o));
-      setSelected({ ...selected, status: editStatus, staff_note: staffNote });
-      toast.success("Statut mis a jour");
+      await updateStatusMutation.mutateAsync({ id: selected.id, payload: { status: editStatus, staff_note: staffNote } });
+      toast.success("Statut mis à jour");
+      setShow(false);
     } catch {
       toast.error("Erreur");
-    } finally {
-      setUpdating(false);
     }
   };
 
@@ -102,7 +97,7 @@ export default function Orders() {
       const a = document.createElement("a");
       a.href = url; a.download = `commandes_${new Date().toISOString().slice(0, 10)}.csv`;
       a.click(); URL.revokeObjectURL(url);
-      toast.success("CSV exporte");
+      toast.success("CSV exporté");
     } catch {
       toast.error("Erreur export");
     }
@@ -110,7 +105,7 @@ export default function Orders() {
 
   return (
     <div className="space-y-6 animate-fade-up">
-      <PageHeader eyebrow="Gestion" title="Commandes" subtitle={`// ${total} entree(s)`}>
+      <PageHeader eyebrow="Gestion" title="Commandes" subtitle={`// ${total} entrée(s)`}>
         <Button variant="outline" onClick={handleExport} className="h-9 rounded-none border-2 mono uppercase tracking-wider text-xs">
           <Download className="h-3.5 w-3.5 mr-2" /> Export CSV
         </Button>
@@ -118,7 +113,17 @@ export default function Orders() {
 
       <DataCard>
         <DataCardHeader>
-          <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0 overflow-x-auto">
+          <div className="sm:hidden w-full">
+            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
+              <SelectTrigger className="rounded-none border-2 mono text-xs h-9 w-full"><SelectValue /></SelectTrigger>
+              <SelectContent className="rounded-none border-2">
+                {statusOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="hidden sm:flex flex-wrap items-center gap-2 flex-1 min-w-0">
             {statusOptions.map((o) => (
               <button
                 key={o.value}
@@ -134,7 +139,7 @@ export default function Orders() {
               </button>
             ))}
           </div>
-          <span className="chip border-border ml-auto">{total} TOTAL</span>
+          <span className="chip border-border ml-auto shrink-0">{total} TOTAL</span>
         </DataCardHeader>
 
         <DataCardContent>
@@ -151,21 +156,24 @@ export default function Orders() {
                 <div
                   key={o.id}
                   onClick={() => open(o)}
-                  className="flex items-center gap-3 p-3 sm:p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+                  className="flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-2 p-3 sm:p-4 cursor-pointer hover:bg-muted/30 transition-colors"
                 >
-                  <span className="mono text-[10px] text-muted-foreground w-12">#{o.id}</span>
+                  <span className="mono text-[10px] text-muted-foreground w-10 sm:w-12 shrink-0">#{o.id}</span>
                   <div className="h-9 w-9 border-2 border-primary/40 bg-primary-soft flex items-center justify-center mono text-xs font-bold text-primary shrink-0">
                     {o.user_email?.[0]?.toUpperCase() || "?"}
                   </div>
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0 basis-[55%] sm:basis-auto">
                     <p className="text-sm font-semibold truncate">{o.product_name || "--"}</p>
                     <p className="text-[10px] mono text-muted-foreground truncate">{o.user_email}</p>
+                    <p className="text-[10px] mono text-muted-foreground sm:hidden mt-0.5">{fmtDate(o.created_at)}</p>
                   </div>
-                  <div className="hidden md:block mono text-[10px] text-muted-foreground">{fmtDate(o.created_at)}</div>
-                  <div className="mono text-sm font-bold">{fmt(o.total_price)}</div>
-                  <StatusBadge status={o.status} />
-                  <span className="hidden sm:inline-block chip border-border">{o.payment_method}</span>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  <div className="hidden md:block mono text-[10px] text-muted-foreground shrink-0">{fmtDate(o.created_at)}</div>
+                  <div className="flex items-center gap-2 ml-auto sm:ml-0 shrink-0 flex-wrap justify-end">
+                    <div className="mono text-sm font-bold whitespace-nowrap">{fmt(o.total_price)}</div>
+                    <StatusBadge status={o.status} />
+                    <span className="hidden lg:inline-block chip border-border">{o.payment_method}</span>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  </div>
                 </div>
               ))}
             </div>
@@ -186,7 +194,7 @@ export default function Orders() {
       </DataCard>
 
       <Dialog open={show} onOpenChange={setShow}>
-        <DialogContent className="rounded-none border-2 max-w-xl max-h-[92vh] overflow-y-auto">
+        <DialogContent className="rounded-none border-2 max-w-xl max-h-[92vh] overflow-y-auto w-[calc(100vw-2rem)] sm:w-full">
           <DialogHeader>
             <DialogTitle className="mono uppercase tracking-wider text-sm">
               // Commande #{selected?.id}
@@ -194,33 +202,40 @@ export default function Orders() {
           </DialogHeader>
           {selected && (
             <div className="space-y-5">
-              {/* Status update */}
+              <OrderClaimBanner
+                key={selected.id}
+                orderId={selected.id}
+                initialClaim={selected.claim ?? null}
+                currentAdminId={adminId}
+                onChange={({ canEdit }) => setCanEdit(canEdit)}
+                disabled={["completed", "rejected", "refunded"].includes(selected.status)}
+              />
               <div className="brackets brut-card p-4 space-y-3">
                 <p className="eyebrow">// Statut</p>
-                <div className="flex items-center gap-2">
-                  <Select value={editStatus} onValueChange={setEditStatus}>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <Select value={editStatus} onValueChange={setEditStatus} disabled={!canEdit}>
                     <SelectTrigger className="rounded-none border-2 mono"><SelectValue /></SelectTrigger>
                     <SelectContent className="rounded-none border-2">
                       {editStatuses.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
-                  <Button onClick={updateStatus} disabled={updating} className="rounded-none border-2 border-primary bg-primary text-primary-foreground mono uppercase tracking-wider text-xs">
-                    {updating ? "..." : "OK"}
+                  <Button onClick={updateStatus} disabled={updateStatusMutation.isPending || !canEdit} className="rounded-none border-2 border-primary bg-primary text-primary-foreground mono uppercase tracking-wider text-xs">
+                    {updateStatusMutation.isPending ? "..." : "OK"}
                   </Button>
                 </div>
                 <div>
                   <Label className="eyebrow mb-1.5 block" style={{ color: "hsl(var(--muted-foreground))" }}>Note interne</Label>
-                  <Textarea rows={2} value={staffNote} onChange={(e) => setStaffNote(e.target.value)} className="rounded-none border-2 mono text-sm" />
+                  <Textarea rows={2} value={staffNote} onChange={(e) => setStaffNote(e.target.value)} disabled={!canEdit} className="rounded-none border-2 mono text-sm" />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 mono text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mono text-xs">
                 <Field label="Client" value={selected.user_email} />
                 <Field label="Produit" value={selected.product_name} />
-                <Field label="Quantite" value={selected.quantity?.toString()} />
+                <Field label="Quantité" value={selected.quantity?.toString()} />
                 <Field label="Total" value={`${selected.total_price?.toLocaleString("fr-FR")} F`} highlight />
                 <Field label="Paiement" value={selected.payment_method} />
-                <Field label="Cree le" value={new Date(selected.created_at).toLocaleString("fr-FR")} />
+                <Field label="Créé le" value={new Date(selected.created_at).toLocaleString("fr-FR")} />
               </div>
 
               {selected.customer_info && (
@@ -257,9 +272,9 @@ export default function Orders() {
 
 function Field({ label, value, highlight }: { label: string; value?: string; highlight?: boolean }) {
   return (
-    <div className="border-2 border-border p-2.5">
+    <div className="border-2 border-border p-2.5 min-w-0">
       <p className="eyebrow mb-1" style={{ color: "hsl(var(--muted-foreground))" }}>{label}</p>
-      <p className={cn("mono", highlight ? "text-primary font-bold text-sm" : "text-foreground text-xs")}>
+      <p className={cn("mono break-words", highlight ? "text-primary font-bold text-sm" : "text-foreground text-xs")}>
         {value || "--"}
       </p>
     </div>

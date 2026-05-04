@@ -1,11 +1,11 @@
 import { NavLink } from "react-router-dom";
-import { Home, ShoppingBag, Package, User, BookOpen } from "lucide-react";
+import { Home, ShoppingBag, Package, User, BookOpen, LogIn, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 
 const tabs = [
-  { to: "/", label: "Home", icon: Home, end: true },
-  { to: "/boutique", label: "Shop", icon: ShoppingBag },
+  { to: "/", label: "Accueil", icon: Home, end: true },
+  { to: "/boutique", label: "Boutique", icon: ShoppingBag },
   { to: "/ebooks", label: "Ebooks", icon: BookOpen },
 ];
 
@@ -14,9 +14,9 @@ export function MobileTabBar() {
   const all = [
     ...tabs,
     user
-      ? { to: "/mes-commandes", label: "Cmd.", icon: Package }
-      : { to: "/connexion", label: "Login", icon: User },
-    { to: user ? "/profil" : "/inscription", label: user ? "Moi" : "Join", icon: User },
+      ? { to: "/mes-commandes", label: "Commandes", icon: Package }
+      : { to: "/connexion", label: "Connexion", icon: LogIn },
+    { to: user ? "/profil" : "/inscription", label: user ? "Profil" : "S'inscrire", icon: user ? User : UserPlus },
   ];
 
   return (
@@ -33,7 +33,6 @@ export function MobileTabBar() {
             end={(t as { end?: boolean }).end}
             className={({ isActive }) =>
               cn(
-                // min-h 56px = recommandation Android Material pour tap targets
                 "relative flex flex-col items-center justify-center gap-1 min-h-[56px] py-2 px-0.5 text-[9px] font-bold uppercase tracking-wider transition-colors",
                 "active:bg-muted/40",
                 isActive ? "text-primary" : "text-muted-foreground"
@@ -48,7 +47,7 @@ export function MobileTabBar() {
                 <t.icon
                   className={cn(
                     "size-[20px] transition-transform",
-                    isActive && "scale-110 drop-shadow-[0_0_8px_hsl(var(--primary)/0.6)]"
+                    isActive && "scale-110"
                   )}
                 />
                 <span className="truncate max-w-full leading-none">{t.label}</span>

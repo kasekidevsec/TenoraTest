@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Check, Loader2, Upload, ShieldCheck, Zap, Image as ImageIcon, MessageCircle } from "lucide-react";
+import { ArrowLeft, Check, Loader2, Upload, ShieldCheck, Zap, Image as ImageIcon, MessageCircle, Clock, BadgeCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { productsApi, ordersApi, formatXOF, type Order } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -9,6 +9,18 @@ import { useSite } from "@/context/SiteContext";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { HighlightedText } from "@/components/ui/HighlightedText";
+import { PaymentLogo, getPaymentAccent } from "@/components/payment/PaymentLogo";
+import { PaymentInstructions } from "@/components/payment/PaymentInstructions";
+
+function cleanDescription(text: string | null | undefined): string {
+  if (!text) return "";
+  return text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l && !/^[.\u2026\-—_*•·]+$/.test(l))
+    .map((l) => (/^[a-zàâäéèêëîïôöùûüç]/.test(l) ? l.charAt(0).toUpperCase() + l.slice(1) : l))
+    .join("\n");
+}
 
 export default function ProductPage() {
   const { id } = useParams();
@@ -21,6 +33,8 @@ export default function ProductPage() {
     queryKey: ["product", productId],
     queryFn: () => productsApi.getProduct(productId).then((r) => r.data),
     enabled: !!productId,
+    staleTime: 2 * 60_000,
+    gcTime: 10 * 60_000,
   });
 
   const [fields, setFields] = useState<Record<string, string>>({});
@@ -38,12 +52,12 @@ export default function ProductPage() {
     return (
       <div className="container-app py-10">
         <div className="grid md:grid-cols-2 gap-8 animate-pulse">
-          <div className="aspect-square rounded-2xl bg-muted" />
+          <div className="aspect-square bg-muted" />
           <div className="space-y-3">
-            <div className="h-8 w-2/3 bg-muted rounded" />
-            <div className="h-4 w-full bg-muted rounded" />
-            <div className="h-12 w-1/2 bg-muted rounded" />
-            <div className="h-24 w-full bg-muted rounded" />
+            <div className="h-8 w-2/3 bg-muted" />
+            <div className="h-4 w-full bg-muted" />
+            <div className="h-12 w-1/2 bg-muted" />
+            <div className="h-24 w-full bg-muted" />
           </div>
         </div>
       </div>
@@ -142,17 +156,30 @@ export default function ProductPage() {
       <div className="grid md:grid-cols-2 gap-6 md:gap-10">
         {/* IMAGE */}
         <div>
-          <div className="aspect-square rounded-2xl overflow-hidden card-elev">
+          <div className="aspect-square overflow-hidden card-elev">
             {product.image_url ? (
               <img src={product.image_url} alt={product.name} className="size-full object-cover" />
             ) : (
-              <div className="size-full flex items-center justify-center text-muted-foreground"><ImageIcon className="size-16 opacity-30" /></div>
+              <div className="size-full flex items-center justify-center text-muted-foreground bg-muted">
+                <ImageIcon className="size-16 opacity-30" />
+              </div>
             )}
           </div>
-          <div className="flex flex-wrap gap-2 mt-3">
-            <span className="chip bg-success/15 text-success border border-success/30"><Check className="size-3" /> En stock</span>
-            <span className="chip bg-primary/15 text-primary border border-primary/30"><Zap className="size-3" /> Traitement &lt; 30 min</span>
-            <span className="chip bg-muted text-muted-foreground border border-border"><ShieldCheck className="size-3" /> Paiement sécurisé</span>
+
+          {/* Badges produit — redessinés pour plus d'impact */}
+          <div className="grid grid-cols-3 gap-2 mt-3">
+            <div className="flex flex-col items-center gap-1.5 border-2 border-success/50 bg-success/10 px-2 py-2.5 text-center">
+              <Check className="size-4 text-success" strokeWidth={2.5} />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-success leading-tight">En stock</span>
+            </div>
+            <div className="flex flex-col items-center gap-1.5 border-2 border-primary/50 bg-primary/10 px-2 py-2.5 text-center">
+              <Clock className="size-4 text-primary" strokeWidth={2.5} />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-primary leading-tight">{"< 30 min"}</span>
+            </div>
+            <div className="flex flex-col items-center gap-1.5 border-2 border-amber-500/50 bg-amber-500/10 px-2 py-2.5 text-center">
+              <ShieldCheck className="size-4 text-amber-500" strokeWidth={2.5} />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-500 leading-tight">Sécurisé</span>
+            </div>
           </div>
         </div>
 
@@ -160,12 +187,15 @@ export default function ProductPage() {
         <div className="space-y-5">
           <div>
             <h1 className="font-display text-2xl md:text-3xl font-bold">{product.name}</h1>
-            {product.description && (
-              <HighlightedText
-                text={product.description}
-                className="text-muted-foreground mt-2 leading-relaxed"
-              />
-            )}
+            {product.description && (() => {
+              const desc = cleanDescription(product.description);
+              return desc ? (
+                <HighlightedText
+                  text={desc}
+                  className="text-muted-foreground mt-2 leading-relaxed"
+                />
+              ) : null;
+            })()}
           </div>
 
           <div className="flex items-baseline gap-3">
@@ -180,13 +210,20 @@ export default function ProductPage() {
             ) : null}
           </div>
 
-          <div className="card-elev rounded-2xl p-4 md:p-5 space-y-4">
+          <div className="card-elev p-4 md:p-5 space-y-4">
             {!order ? (
               <>
-                {orderError && <div className="rounded-lg border border-destructive/40 bg-destructive/10 text-destructive text-sm px-3 py-2">{orderError}</div>}
+                {orderError && (
+                  <div className="border border-destructive/40 bg-destructive/10 text-destructive text-sm px-3 py-2">
+                    {orderError}
+                  </div>
+                )}
                 {product.required_fields && product.required_fields.length > 0 && (
                   <div className="space-y-3">
-                    <p className="font-semibold text-sm">Informations requises</p>
+                    <div className="flex items-center gap-2 pb-2 border-b-2 border-border">
+                      <BadgeCheck className="size-4 text-primary" />
+                      <p className="font-bold text-sm uppercase tracking-wider">Informations requises</p>
+                    </div>
                     {product.required_fields.map((f) => (
                       <div key={f.key}>
                         <label className="text-xs font-medium text-muted-foreground">
@@ -196,7 +233,7 @@ export default function ProductPage() {
                           value={fields[f.key] || ""}
                           onChange={(e) => setFields((p) => ({ ...p, [f.key]: e.target.value }))}
                           placeholder={f.placeholder || ""}
-                          className="mt-1 w-full h-11 px-3 rounded-lg bg-input border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                          className="mt-1 w-full h-11 px-3 bg-input border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
                         />
                       </div>
                     ))}
@@ -204,23 +241,50 @@ export default function ProductPage() {
                 )}
 
                 {!product.whatsapp_redirect && paymentMethods.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="font-semibold text-sm">Moyen de paiement</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {paymentMethods.map((m) => (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => setPaymentMethod(m.id)}
-                          className={cn(
-                            "flex items-center gap-2 p-3 rounded-lg border text-left transition",
-                            paymentMethod === m.id ? "border-primary bg-primary/10" : "border-border hover:border-primary/40"
-                          )}
-                        >
-                          <span className="text-xl">{m.icon}</span>
-                          <span className="text-sm font-medium">{m.name}</span>
-                        </button>
-                      ))}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="font-semibold text-sm">Moyen de paiement</p>
+                      {selectedMethod && (
+                        <span className="text-[10px] uppercase tracking-widest font-bold text-primary font-mono">
+                          {selectedMethod.name} sélectionné
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                      {paymentMethods.map((m) => {
+                        const active = paymentMethod === m.id;
+                        const accent = getPaymentAccent(m.id);
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setPaymentMethod(m.id)}
+                            aria-pressed={active}
+                            title={m.name}
+                            style={active && accent ? { borderColor: accent, boxShadow: `0 0 0 1px ${accent} inset` } : undefined}
+                            className={cn(
+                              "group relative flex flex-col items-center gap-1.5 p-2 border-2 transition-all bg-background",
+                              active
+                                ? "scale-[1.02]"
+                                : "border-border hover:border-foreground/30 hover:-translate-y-0.5"
+                            )}
+                          >
+                            <PaymentLogo methodId={m.id} name={m.name} variant="tile" />
+                            <span className="text-[11px] font-semibold leading-tight text-center line-clamp-1">
+                              {m.name}
+                            </span>
+                            {active && (
+                              <span
+                                aria-hidden
+                                style={accent ? { backgroundColor: accent } : undefined}
+                                className="absolute -top-1.5 -right-1.5 size-4 rounded-full flex items-center justify-center text-[10px] text-white shadow"
+                              >
+                                <Check className="size-3" strokeWidth={3} />
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -237,15 +301,18 @@ export default function ProductPage() {
               </>
             ) : (
               <>
-                <div className="rounded-lg bg-success/10 border border-success/30 text-success text-sm px-3 py-2 flex items-center gap-2">
+                <div className="bg-success/10 border border-success/30 text-success text-sm px-3 py-2 flex items-center gap-2">
                   <Check className="size-4" /> Commande #{order.id} créée. Réglez puis envoyez la capture.
                 </div>
 
                 {selectedMethod && (
-                  <div className="rounded-lg bg-muted p-3 text-sm">
-                    <p className="font-semibold mb-1">{selectedMethod.icon} {selectedMethod.name}</p>
-                    <p className="text-muted-foreground whitespace-pre-line">{selectedMethod.instructions}</p>
-                  </div>
+                  <PaymentInstructions
+                    methodId={selectedMethod.id}
+                    methodName={selectedMethod.name}
+                    rawInstructions={selectedMethod.instructions}
+                    amountFormatted={formatXOF(order.total_price)}
+                    orderId={order.id}
+                  />
                 )}
 
                 <div>
@@ -257,7 +324,7 @@ export default function ProductPage() {
                       onChange={(e) => setFile(e.target.files?.[0] || null)}
                       className="absolute inset-0 opacity-0 cursor-pointer"
                     />
-                    <div className={cn("border-2 border-dashed rounded-lg p-6 text-center", file ? "border-primary bg-primary/5" : "border-border")}>
+                    <div className={cn("border-2 border-dashed p-6 text-center", file ? "border-primary bg-primary/5" : "border-border")}>
                       <Upload className="size-6 mx-auto text-muted-foreground mb-2" />
                       <p className="text-sm font-medium">{file ? file.name : "Cliquez pour choisir une capture"}</p>
                       <p className="text-xs text-muted-foreground mt-1">PNG ou JPG, max ~5MB</p>
@@ -265,24 +332,32 @@ export default function ProductPage() {
                   </div>
                 </div>
 
-                <Button onClick={handleUpload} disabled={!file || uploading} size="lg" className="w-full h-12 bg-gradient-primary text-primary-foreground">
-                  {uploading ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-                  Valider ma commande
+                <Button
+                  onClick={handleUpload}
+                  disabled={!file || uploading}
+                  size="lg"
+                  className="w-full h-12 bg-gradient-primary text-primary-foreground hover:opacity-90 shadow-glow"
+                >
+                  {uploading ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+                  Envoyer la capture
                 </Button>
+
+                {wa && (
+                  <p className="text-xs text-muted-foreground text-center">
+                    Un problème ?{" "}
+                    <a
+                      href={`https://wa.me/${wa}?text=${encodeURIComponent(`Commande #${order.id} — besoin d'aide`)}`}
+                      target="_blank"
+                      rel="noopener"
+                      className="text-primary font-medium hover:underline"
+                    >
+                      Contactez-nous sur WhatsApp
+                    </a>
+                  </p>
+                )}
               </>
             )}
           </div>
-
-          {wa && (
-            <a
-              href={`https://wa.me/${wa}`}
-              target="_blank"
-              rel="noopener"
-              className="block text-center text-sm text-muted-foreground hover:text-whatsapp"
-            >
-              Une question ? <span className="underline">Contactez-nous sur WhatsApp</span>
-            </a>
-          )}
         </div>
       </div>
     </div>

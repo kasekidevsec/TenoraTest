@@ -20,15 +20,16 @@ import { Button } from "@/components/ui/button";
 import { productsApi } from "@/lib/api";
 import { useSite } from "@/context/SiteContext";
 import { ProductCard } from "@/components/product/ProductCard";
+import { PaymentLogo } from "@/components/payment/PaymentLogo";
 
 const services = [
   {
     icon: Gamepad2,
     code: "01",
     tag: "Gaming",
-    title: "Free Fire & MLBB",
+    title: "Free Fire, MLBB & Bien d'autres",
     desc: "Drop de diamants sur ID en moins de 60s. Pas besoin de login.",
-    price: "Dès 500 F",
+    price: "Dès 1 500",
     to: "/boutique",
     accent: "magenta",
     big: true,
@@ -38,7 +39,7 @@ const services = [
     code: "02",
     tag: "Streaming",
     title: "Netflix 4K",
-    desc: "Activation 5 min, écrans privés.",
+    desc: "Activation  rapide, satisfaction garantie.",
     price: "3 500 F",
     to: "/boutique",
     accent: "primary",
@@ -48,7 +49,7 @@ const services = [
     code: "03",
     tag: "Import",
     title: "Shein / Alibaba",
-    desc: "Sans carte. Livré à Niamey.",
+    desc: "Sans carte. Livré à Niamey Et Partout Au Niger.",
     price: "Devis gratuit",
     to: "/import",
     accent: "cyan",
@@ -59,7 +60,7 @@ const services = [
     tag: "Knowledge",
     title: "Ebooks & Formations",
     desc: "Business, marketing, dev.",
-    price: "Dès 1 000 F",
+    price: "Dès 1 250 F",
     to: "/ebooks",
     accent: "primary",
   },
@@ -74,14 +75,14 @@ const accentMap: Record<string, { border: string; text: string; bg: string; shad
 const steps = [
   { n: "01", icon: ShoppingBag, title: "Choisir", desc: "Parcourez la boutique. Ajoutez votre commande au panier." },
   { n: "02", icon: CreditCard, title: "Payer", desc: "Mobile Money — Airtel ou Moov. Confirmation immédiate." },
-  { n: "03", icon: Zap, title: "Recevoir", desc: "Activation digitale en minutes. Import sous 24h à Niamey." },
+  { n: "03", icon: Zap, title: "Recevoir", desc: "Activation digitale en minutes. Import sous 24h à Niamey Et Partout Au Niger." },
 ];
 
 const tickerItems = [
   "Livraison < 2 min",
-  "Paiement Airtel & Moov",
+  "Paiement Mynita,Amanata,Mobile Money & crypto",
   "Support WhatsApp 24/7",
-  "+500 clients à Niamey",
+  "+500 clients satisfaits",
   "Note 4.9 / 5",
   "Activation instantanée",
 ];
@@ -93,24 +94,24 @@ const testimonials = [
 ];
 
 const whyUs = [
-  { icon: ShieldCheck, title: "100% sécurisé", desc: "Mobile Money ou cash sur place." },
+  { icon: ShieldCheck, title: "100% sécurisé", desc: "Mobile Money,Mynita,Amanata & Crypto." },
   { icon: Headphones, title: "Support humain", desc: "Réponse WhatsApp sous 5 min." },
   { icon: MapPin, title: "Basés à Niamey", desc: "Service local, prix locaux." },
-  { icon: Zap, title: "Livraison express", desc: "Digital en minutes, import < 24h." },
+  { icon: Zap, title: "Livraison express", desc: "Digital en minutes, imports dans la semaine." },
 ];
 
 export default function Home() {
-  // On lit d'abord les settings du site pour connaitre les produits mis en avant
-  // par l'admin (cle `featured_product_ids` cote backend, exposee via /site/init).
-  const { data: site } = useSite();
+  const { data: site, loading: siteLoading } = useSite();
   const featuredIds = site?.featured_product_ids ?? [];
+  const featuredKey = featuredIds.join(",");
 
+  // ⚡ On n'active la query qu'une fois site chargé pour éviter la cascade
+  //    "fetch [] puis re-fetch [vraies IDs]" qui doublait l'appel au boot.
   const { data: products = [] } = useQuery({
-    queryKey: ["shop", "featured", featuredIds.join(",")],
+    queryKey: ["home", "featured", featuredKey],
+    enabled: !siteLoading,
+    staleTime: 5 * 60_000,
     queryFn: async () => {
-      // 1) Si l'admin a configure des produits phares -> on les affiche dans
-      //    l'ordre choisi dans le panel (et on filtre ceux desactives/supprimes
-      //    via le endpoint backend /products/by-ids qui ne retourne que les actifs).
       if (featuredIds.length > 0) {
         const res = await productsApi.getByIds(featuredIds);
         const byId = new Map(res.data.map((p) => [p.id, p]));
@@ -119,11 +120,11 @@ export default function Home() {
           .filter((p): p is NonNullable<typeof p> => Boolean(p))
           .slice(0, 8);
       }
-      // 2) Fallback : derniers produits ajoutes (comportement historique).
       const res = await productsApi.getShopProducts({ sort: "newest" });
       return res.data.slice(0, 8);
     },
   });
+
   const wa = site?.whatsapp_number?.replace(/\D/g, "") || "";
   const waUrl = wa
     ? `https://wa.me/${wa}?text=${encodeURIComponent("Bonjour Tenora, je voudrais passer une commande.")}`
@@ -147,7 +148,7 @@ export default function Home() {
             </span>
           </div>
 
-          <h1 className="font-display font-bold text-[clamp(3rem,12vw,11rem)] leading-[0.85] uppercase text-balance tracking-tight max-w-6xl animate-fade-up">
+          <h1 className="font-display font-bold text-[clamp(2.25rem,10vw,8rem)] leading-[0.88] uppercase text-balance tracking-tight max-w-6xl animate-fade-up">
             Passez en mode
             <br />
             <span className="text-transparent bg-clip-text bg-gradient-primary">God Tier.</span>
@@ -206,7 +207,7 @@ export default function Home() {
       {/* ========== TICKER ========== */}
       <div className="border-b-2 border-border bg-card overflow-hidden py-4 flex relative">
         <div className="flex gap-12 items-center font-display text-2xl md:text-3xl uppercase text-muted-foreground whitespace-nowrap px-8 animate-marquee w-max">
-          {[...tickerItems, ...tickerItems, ...tickerItems].map((t, i) => (
+          {[...tickerItems, ...tickerItems].map((t, i) => (
             <span key={i} className="flex items-center gap-12">
               <span className="text-foreground">{t}</span>
               <span className="text-secondary">//</span>
@@ -341,6 +342,35 @@ export default function Home() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ========== TRUSTED PAYMENTS ========== */}
+      <section className="border-y-2 border-border bg-card">
+        <div className="container-app py-8 md:py-10">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <ShieldCheck className="size-5 text-primary shrink-0" />
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-secondary font-mono">// Paiement</p>
+                <p className="font-display text-2xl md:text-3xl font-bold uppercase leading-none mt-0.5">
+                  Méthodes acceptées
+                </p>
+              </div>
+            </div>
+            <ul className="flex flex-wrap items-center gap-3 md:gap-4">
+              {(site?.payment_methods || [])
+                .filter((m) => m.enabled)
+                .map((m) => (
+                  <li key={m.id} className="flex items-center gap-2">
+                    <PaymentLogo methodId={m.id} name={m.name} variant="thumb" />
+                    <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground hidden sm:inline">
+                      {m.name}
+                    </span>
+                  </li>
+                ))}
+            </ul>
           </div>
         </div>
       </section>

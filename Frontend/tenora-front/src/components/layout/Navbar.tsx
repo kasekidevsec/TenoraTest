@@ -1,9 +1,9 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Menu, ShoppingBag, User, LogOut, Package, BookOpen, Truck, X } from "lucide-react";
-import { useState } from "react";
+import { Menu, ShoppingBag, User, LogOut, Package, BookOpen, Truck, Sun, Moon } from "lucide-react";
+import { useState, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { TenoraLogo } from "@/components/brand/TenoraLogo";
 import { cn } from "@/lib/utils";
 
@@ -13,10 +13,26 @@ const links = [
   { to: "/import", label: "Import", icon: Truck },
 ];
 
+function useTheme() {
+  const [isLight, setIsLight] = useState<boolean>(
+    () => document.documentElement.classList.contains("light")
+  );
+
+  const toggle = useCallback(() => {
+    const next = !document.documentElement.classList.contains("light");
+    document.documentElement.classList.toggle("light", next);
+    try { localStorage.setItem("tenora-theme", next ? "light" : "dark"); } catch {}
+    setIsLight(next);
+  }, []);
+
+  return { isLight, toggle };
+}
+
 export function Navbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const { isLight, toggle } = useTheme();
 
   const handleLogout = async () => {
     await logout();
@@ -26,11 +42,11 @@ export function Navbar() {
   return (
     <header className="sticky top-0 z-40 bg-background/95 md:bg-background/85 backdrop-blur-xl border-b-2 border-border">
       <div className="container-app h-14 md:h-16 flex items-center justify-between gap-4">
-        <Link to="/" className="flex items-center gap-2 shrink-0 group">
-          <TenoraLogo className="text-2xl text-foreground group-hover:text-primary transition-colors" />
+        <Link to="/" className="flex items-center gap-2 shrink-0 group" aria-label="Tenora — accueil">
+          <TenoraLogo className="text-2xl md:text-3xl transition-colors" />
         </Link>
 
-        <nav className="hidden md:flex items-center gap-1">
+        <nav className="hidden md:flex items-center gap-1" aria-label="Navigation principale">
           {links.map((l) => (
             <NavLink
               key={l.to}
@@ -50,6 +66,22 @@ export function Navbar() {
         </nav>
 
         <div className="flex items-center gap-2">
+          {/* Toggle thème — affiche le mode actif, cliquer bascule */}
+          <button
+            onClick={toggle}
+            aria-label={isLight ? "Passer en mode sombre" : "Passer en mode clair"}
+            className={cn(
+              "hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 border-2",
+              "text-[10px] font-bold uppercase tracking-widest font-mono transition-colors",
+              isLight
+                ? "border-amber-400/60 text-amber-500 hover:border-amber-400 hover:bg-amber-400/10"
+                : "border-primary/60 text-primary hover:border-primary hover:bg-primary/10"
+            )}
+          >
+            {isLight ? <Sun className="size-3" /> : <Moon className="size-3" />}
+            {isLight ? "Clair" : "Sombre"}
+          </button>
+
           {user ? (
             <div className="hidden md:flex items-center gap-2">
               <Button asChild variant="ghost" size="sm" className="uppercase tracking-wider text-xs">
@@ -77,14 +109,28 @@ export function Navbar() {
 
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
-              <Button variant="outline" size="icon" className="md:hidden border-2">
+              <Button variant="outline" size="icon" className="md:hidden border-2" aria-label="Ouvrir le menu">
                 <Menu className="size-5" />
               </Button>
             </SheetTrigger>
             <SheetContent side="right" className="w-[88%] max-w-sm p-0 bg-sidebar border-l-2 border-sidebar-border">
+              <SheetTitle className="sr-only">Menu de navigation</SheetTitle>
               <div className="flex items-center justify-between p-4 border-b-2 border-sidebar-border">
                 <TenoraLogo className="text-xl" />
-                <Button variant="ghost" size="icon" onClick={() => setOpen(false)}><X className="size-5" /></Button>
+                {/* Toggle mobile dans le menu latéral */}
+                <button
+                  onClick={toggle}
+                  aria-label={isLight ? "Mode sombre" : "Mode clair"}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 px-2.5 py-1 border-2 text-[10px] font-bold uppercase tracking-widest font-mono transition-colors",
+                    isLight
+                      ? "border-amber-400/60 text-amber-500"
+                      : "border-primary/60 text-primary"
+                  )}
+                >
+                  {isLight ? <Sun className="size-3" /> : <Moon className="size-3" />}
+                  {isLight ? "Clair" : "Sombre"}
+                </button>
               </div>
               <div className="p-3 space-y-1">
                 {links.map((l) => (
